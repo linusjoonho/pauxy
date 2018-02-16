@@ -112,7 +112,6 @@ class CPMC(object):
             )
             self.psi = pauxy.walker.Walkers(self.system, self.trial,
                                             self.qmc.nwalkers,
-                                            self.estimators.nprop_tot,
                                             self.estimators.nbp,
                                             verbose)
             json.encoder.FLOAT_REPR = lambda o: format(o, '.6f')

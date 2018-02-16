@@ -23,7 +23,7 @@ class Walkers(object):
         Number of back propagation steps.
     """
 
-    def __init__(self, system, trial, nwalkers, nprop_tot, nbp, verbose=False):
+    def __init__(self, system, trial, nwalkers, nbp, verbose=False):
         if trial.name == 'multi_determinant':
             if trial.type == 'GHF':
                 self.walkers = [MultiGHFWalker(1, system, trial)
@@ -39,7 +39,7 @@ class Walkers(object):
         else:
             dtype = int
         self.pop_control = self.comb
-        self.add_field_config(nprop_tot, nbp, system.nfields, dtype)
+        self.add_field_config(nbp, system.nfields, dtype)
         self.calculate_total_weight()
         self.calculate_nwalkers()
 
@@ -64,22 +64,20 @@ class Walkers(object):
             if free_projection:
                 w.weight = detR * w.weight
 
-    def add_field_config(self, nprop_tot, nbp, nfields, dtype):
+    def add_field_config(self, nbp, nfields, dtype):
         """Add FieldConfig object to walker object.
 
         Parameters
         ----------
-        nprop_tot : int
-            Total number of propagators to store for back propagation + itcf.
-        nbp : int
-            Number of back propagation steps.
+        nbp : list
+            Number of back propagation steps [nprop_total, nbp, neq].
         nfields : int
             Number of fields to store for each back propagation step.
         dtype : type
             Field configuration type.
         """
         for w in self.walkers:
-            w.field_configs = FieldConfig(nfields, nprop_tot, nbp, dtype)
+            w.field_configs = FieldConfig(nfields, nbp, dtype)
 
     def copy_historic_wfn(self):
         """Copy current wavefunction to psi_n for next back propagation step."""
@@ -858,18 +856,19 @@ class FieldConfig(object):
     dtype : type
         Field configuration type.
     """
-    def __init__(self, nfields, nprop_tot, nbp, dtype):
-        self.configs = numpy.zeros(shape=(nprop_tot, nfields), dtype=dtype)
-        self.cos_fac = numpy.zeros(shape=(nprop_tot, 1), dtype=float)
-        self.weight_fac = numpy.zeros(shape=(nprop_tot, 1), dtype=complex)
+    def __init__(self, nfields, nbp, dtype):
+        self.configs = numpy.zeros(shape=(nbp[0], nfields), dtype=dtype)
+        self.cos_fac = numpy.zeros(shape=(nbp[0], 1), dtype=float)
+        self.weight_fac = numpy.zeros(shape=(nbp[0], 1), dtype=complex)
         self.step = 0
         # need to account for first iteration and how we iterate
         self.block = -1
         self.ib = 0
         self.nfields = nfields
-        self.nbp = nbp
-        self.nprop_tot = nprop_tot
-        self.nblock = nprop_tot // nbp
+        self.nprop_tot = nbp[0]
+        self.nbp = nbp[1]
+        self.neq = nbp[2]
+        self.nblock = self.nprop_tot // (self.neq+self.nbp)
 
     def push(self, config):
         """Add field configuration to buffer.
@@ -912,8 +911,15 @@ class FieldConfig(object):
 
     def get_block(self):
         """Return a view to current block for back propagation."""
-        start = self.block * self.nbp
-        end = (self.block + 1) * self.nbp
+        start = self.neq + self.block * self.nbp
+        end = (self.block + 1) * (self.neq+self.nbp)
+        return (self.configs[start:end], self.cos_fac[start:end],
+                self.weight_fac[start:end])
+
+    def get_eq_block(self):
+        """Return a view to segment used to "equilibrate phase" for back propagation."""
+        start = self.block * (self.neq + self.nbp)
+        end = start + self.neq
         return (self.configs[start:end], self.cos_fac[start:end],
                 self.weight_fac[start:end])
 

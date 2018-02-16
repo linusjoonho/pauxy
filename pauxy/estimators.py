@@ -83,19 +83,19 @@ class Estimators(object):
             self.estimators['back_prop'] = BackPropagation(bp, root, self.h5f,
                                                            qmc, system, trial,
                                                            dtype, BT2)
-            self.nprop_tot = self.estimators['back_prop'].nmax
-            self.nbp = self.estimators['back_prop'].nmax
+            self.nbp = [self.estimators['back_prop'].ntotal,
+                        self.estimators['back_prop'].nmax,
+                        self.estimators['back_prop'].neqlb]
         else:
-            self.nprop_tot = 1
-            self.nbp = 1
+            self.nbp = [1, 1, 0]
         # 2. Imaginary time correlation functions.
         itcf = estimates.get('itcf', None)
         self.calc_itcf = itcf is not None
         if self.calc_itcf:
             self.estimators['itcf'] = ITCF(itcf, qmc, trial, root, self.h5f,
                                            system.nbasis, dtype,
-                                           self.nprop_tot, BT2)
-            self.nprop_tot = self.estimators['itcf'].nprop_tot
+                                           self.nbp[0], BT2)
+            self.nbp[0] = self.estimators['itcf'].nprop_tot
 
     def print_step(self, comm, nprocs, step, nmeasure):
         """Print QMC estimates.
@@ -387,7 +387,7 @@ class BackPropagation(object):
         Output file object.
     qmc : :class:`pauxy.state.QMCOpts` object.
         Container for qmc input options.
-    system : system object 
+    system : system object
         System object.
     trial : :class:`pauxy.trial_wavefunction.X' object
         Trial wavefunction class.
@@ -402,7 +402,7 @@ class BackPropagation(object):
         Max number of measurements.
     header : int
         Output header.
-    rdm : bool 
+    rdm : bool
         True if output BP RDM to file.
     nreg : int
         Number of regular estimates (exluding iteration).
@@ -420,6 +420,8 @@ class BackPropagation(object):
 
     def __init__(self, bp, root, h5f, qmc, system, trial, dtype, BT2):
         self.nmax = bp.get('nback_prop', 0)
+        self.neqlb = bp.get('nequilibrate', 0)
+        self.ntotal = self.nmax + self.neqlb
         self.header = ['iteration', 'weight', 'E', 'T', 'V']
         self.rdm = bp.get('rdm', False)
         self.nreg = len(self.header[1:])
@@ -482,7 +484,9 @@ class BackPropagation(object):
         free_projection : bool
             True if doing free projection.
         """
-        if step % self.nmax != 0:
+        if step % self.ntotal == self.neqlb and self.neqlb > 0:
+            psi.copy_historic_wfn()
+        elif step % self.ntotal != 0:
             return
         psi_bp = self.back_propagate(system, psi.walkers, trial,
                                      self.nstblz, self.BT2, qmc.dt)
@@ -523,7 +527,7 @@ class BackPropagation(object):
         free_projection : bool
             True if doing free projection.
         """
-        if step % self.nmax != 0:
+        if step % self.ntotal != 0:
             return
         psi_bp = pauxy.propagation.back_propagate_ghf(system, psi.walkers, trial,
                                                       self.nstblz, self.BT2,
@@ -560,8 +564,14 @@ class BackPropagation(object):
         factor : complex
             Reweighting factor.
         """
+        # walker's initial phase from "equilibration"
+        if self.neqlb > 0:
+            ic, icf, iwf = walker.field_configs.get_eq_block()
+            init_phase = numpy.prod(iwf)
+        else:
+            init_phase = 1.0 + 0j
         configs, cos_fac, weight_fac = walker.field_configs.get_block()
-        factor = 1.0 + 0j
+        factor = init_phase
         for (w, c) in zip(weight_fac, cos_fac):
             factor *= w[0]
             if (self.restore_weights == "full"):

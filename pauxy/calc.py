@@ -131,7 +131,6 @@ def setup_parallel(options, comm=None, verbose=False):
     cpmc.psi = pauxy.walker.Walkers(cpmc.system,
                                     cpmc.trial,
                                     cpmc.qmc.nwalkers,
-                                    cpmc.estimators.nprop_tot,
                                     cpmc.estimators.nbp)
     if comm.Get_rank() == 0:
         json.encoder.FLOAT_REPR = lambda o: format(o, '.6f')
